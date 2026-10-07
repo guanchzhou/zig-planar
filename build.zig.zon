@@ -1,0 +1,17 @@
+.{
+    .name = .zig_planar,
+    .version = "0.1.0",
+    .fingerprint = 0xa94cd113f4346d47,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "test",
+        "examples",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md",
+    },
+}
