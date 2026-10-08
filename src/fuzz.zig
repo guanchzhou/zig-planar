@@ -1,4 +1,5 @@
-//! Fuzz targets checking properties that must hold for every input. `zig build test` runs every
+//! Fuzz targets checking properties that must hold for every input, including directed
+//! lengths and zero lengths for the shortest paths. `zig build test` runs every
 //! input in `src/fuzz-corpus/`; `zig build test --fuzz` explores further. Copy any input that
 //! finds a bug back into the corpus.
 
@@ -7,6 +8,7 @@ const graph = @import("graph.zig");
 const planarity = @import("planarity.zig");
 const kuratowski = @import("kuratowski.zig");
 const color = @import("color.zig");
+const mssp = @import("mssp.zig");
 const Smith = std.testing.Smith;
 
 const corpus = [_][]const u8{
@@ -88,4 +90,52 @@ fn degeneracy(_: void, smith: *Smith) anyerror!void {
 
 test "fuzz: smallest-last order and greedy colouring" {
     try std.testing.fuzz({}, degeneracy, .{ .corpus = &corpus });
+}
+
+/// On a connected planar graph with random dart lengths, every tree from every face gives the
+/// Bellman-Ford distances from its root.
+fn shortestFromFace(_: void, smith: *Smith) anyerror!void {
+    const gpa = std.testing.allocator;
+    const n = upTo(smith, 1, max_n);
+    var buf: [max_edges]graph.Edge = undefined;
+    const m = upTo(smith, 0, max_edges);
+    for (buf[0..m]) |*e| e.* = .{ upTo(smith, 0, n - 1), upTo(smith, 0, n - 1) };
+    const g = try graph.Graph.init(gpa, n, buf[0..m]);
+    defer g.deinit(gpa);
+    if (g.edgeCount() == 0) return;
+    const e = (try planarity.embed(gpa, g)) orelse return;
+    defer e.deinit(gpa);
+    var lengths: [2 * max_edges]u32 = undefined;
+    for (lengths[0..g.adj.len]) |*l| l.* = upTo(smith, 0, 9);
+
+    const faces = try e.faces(gpa);
+    defer faces.deinit(gpa);
+    const cycle = faces.get(upTo(smith, 0, faces.count() - 1));
+    const t = mssp.trees(gpa, g, e, lengths[0..g.adj.len], .{ cycle[0], cycle[1] }) catch |err| switch (err) {
+        error.Disconnected => return,
+        else => |x| return x,
+    };
+    defer t.deinit(gpa);
+    try std.testing.expectEqualSlices(u32, cycle, t.boundary);
+
+    var w = try mssp.Walk.init(gpa, &t);
+    defer w.deinit(gpa);
+    var got: [max_n]u64 = undefined;
+    var want: [max_n]u64 = undefined;
+    while (true) {
+        try mssp.distances(gpa, g, lengths[0..g.adj.len], w.parent, got[0..n]);
+        @memset(want[0..n], std.math.maxInt(u64));
+        want[w.root()] = 0;
+        for (0..n) |_| {
+            for (g.from, g.adj, lengths[0..g.adj.len]) |u, v, l| {
+                if (want[u] != std.math.maxInt(u64)) want[v] = @min(want[v], want[u] + l);
+            }
+        }
+        try std.testing.expectEqualSlices(u64, want[0..n], got[0..n]);
+        if (!w.next()) break;
+    }
+}
+
+test "fuzz: multiple-source shortest paths match Bellman-Ford" {
+    try std.testing.fuzz({}, shortestFromFace, .{ .corpus = &corpus });
 }
