@@ -3,6 +3,8 @@
 Planarity testing, embeddings and colourings of planar graphs, in pure Zig
 0.17.
 
+![A map of 28 regions becomes a planar graph, zig-planar colours it with four colours, and the map needs all four](docs/four-colours.gif)
+
 - **Planarity test with embedding**: the left-right algorithm in linear time.
   A planar graph comes back with a combinatorial embedding: the neighbours of
   every vertex in cyclic order.
@@ -115,6 +117,7 @@ zig build test-cli          # command-line tests only
 zig build test --fuzz=10K   # fuzz the invariants (needs .zig-cache/tmp to exist)
 zig build docs              # API documentation in zig-out/docs
 uv run --with networkx --with scipy --with numpy python test/reference.py   # regenerate test/golden.json
+uv run --with numpy --with scipy --with matplotlib python docs/four-colours.py   # regenerate docs/four-colours.gif
 ```
 
 `test/reference.py` builds 435 graphs: named graphs (K5, K3,3, Petersen,
