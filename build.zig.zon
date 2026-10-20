@@ -1,6 +1,6 @@
 .{
     .name = .zig_planar,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0xa94cd113f4346d47,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{},

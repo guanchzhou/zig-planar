@@ -320,13 +320,34 @@ const Search = struct {
         if (lowestFree(usedMask(s.g, colors, v), 4) != null) return true;
         if (level == s.depth) return false;
         const members = &s.levels[level];
-        for (s.g.neighbors(v)) |u| {
+        const nbrs = s.g.neighbors(v);
+        const is_leaf = (level + 1 == s.depth);
+        var seen_leaf_color: u8 = 0;
+        for (nbrs, 0..) |u, idx| {
             const a = colors[u];
             if (a == uncolored) continue;
-            for (0..4) |bi| {
+            if (is_leaf) {
+                const bit = @as(u8, 1) << @intCast(a);
+                if (seen_leaf_color & bit != 0) continue;
+                seen_leaf_color |= bit;
+            }
+            next_b: for (0..4) |bi| {
                 const b: u8 = @intCast(bi);
                 if (b == a) continue;
                 if (try s.kempe.chain(gpa, u, a, b, none, s.limit, members) == .too_big) continue;
+                const epoch = s.kempe.epoch;
+                if (is_leaf) {
+                    for (nbrs) |w| {
+                        const cw = colors[w];
+                        if (cw == a and s.kempe.stamp[w] != epoch) continue :next_b;
+                        if (cw == b and s.kempe.stamp[w] == epoch) continue :next_b;
+                    }
+                    s.kempe.flip(members.items, a, b);
+                    return true;
+                }
+                for (nbrs[0..idx]) |w| {
+                    if (colors[w] == a and s.kempe.stamp[w] == epoch) continue :next_b;
+                }
                 s.kempe.flip(members.items, a, b);
                 if (try s.free(gpa, v, level + 1)) return true;
                 s.kempe.flip(members.items, a, b);

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-10-20
 
 - `mssp`: Klein's multiple-source shortest paths. `trees` returns a
   shortest-path tree rooted at every vertex of one face in O(n log n) time,
@@ -16,6 +16,7 @@
   Bellman-Ford using different lengths in the two directions.
 - `docs/shortest-paths.gif`, rendered from real `zig-planar paths` output by
   `docs/shortest-paths.py`, which checks every tree against Dijkstra.
+- Prevent partial allocation leaks on OOM in `planarity.State.init`, deduplicate Kempe chain trials in `color.Search.free`, bound CLI `stdin` reads, and add GitHub Actions CI workflow.
 
 ## 0.1.0 - 2026-10-07
 

@@ -46,26 +46,26 @@ const State = struct {
     gpa: std.mem.Allocator,
     g: Graph,
     // Per vertex.
-    height: []u32,
-    parent_edge: []u32,
-    it: []u32,
-    returning: []bool,
-    ord_start: []u32,
-    left_ref: []u32,
-    right_ref: []u32,
-    first: []u32,
+    height: []u32 = &.{},
+    parent_edge: []u32 = &.{},
+    it: []u32 = &.{},
+    returning: []bool = &.{},
+    ord_start: []u32 = &.{},
+    left_ref: []u32 = &.{},
+    right_ref: []u32 = &.{},
+    first: []u32 = &.{},
     // Per half-edge.
-    oriented: []bool,
-    lowpt: []u32,
-    lowpt2: []u32,
-    nesting: []i64,
-    ref: []u32,
-    side: []i8,
-    lowpt_edge: []u32,
-    stack_bottom: []u32,
-    ord: []u32,
-    cw: []u32,
-    ccw: []u32,
+    oriented: []bool = &.{},
+    lowpt: []u32 = &.{},
+    lowpt2: []u32 = &.{},
+    nesting: []i64 = &.{},
+    ref: []u32 = &.{},
+    side: []i8 = &.{},
+    lowpt_edge: []u32 = &.{},
+    stack_bottom: []u32 = &.{},
+    ord: []u32 = &.{},
+    cw: []u32 = &.{},
+    ccw: []u32 = &.{},
     // Stacks.
     conflicts: std.ArrayList(Pair) = .empty,
     dfs: std.ArrayList(u32) = .empty,
@@ -75,13 +75,8 @@ const State = struct {
     fn init(gpa: std.mem.Allocator, g: Graph) !State {
         const n: usize = g.n;
         const m2 = g.adj.len;
-        var s: State = undefined;
-        s.gpa = gpa;
-        s.g = g;
-        s.conflicts = .empty;
-        s.dfs = .empty;
-        s.chain = .empty;
-        s.roots = .empty;
+        var s: State = .{ .gpa = gpa, .g = g };
+        errdefer s.deinit();
         inline for (.{ "height", "parent_edge", "it", "left_ref", "right_ref", "first" }) |name| {
             @field(s, name) = try gpa.alloc(u32, n);
         }
@@ -111,7 +106,9 @@ const State = struct {
             "height",     "parent_edge",  "it",    "returning", "ord_start", "left_ref", "right_ref",
             "first",      "oriented",     "lowpt", "lowpt2",    "nesting",   "ref",      "side",
             "lowpt_edge", "stack_bottom", "ord",   "cw",        "ccw",
-        }) |name| gpa.free(@field(s, name));
+        }) |name| {
+            if (@field(s, name).len > 0) gpa.free(@field(s, name));
+        }
         s.conflicts.deinit(gpa);
         s.dfs.deinit(gpa);
         s.chain.deinit(gpa);
