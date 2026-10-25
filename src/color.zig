@@ -128,17 +128,29 @@ fn lowestFree(mask: u32, k: u8) ?u8 {
     return if (c < k) @intCast(c) else null;
 }
 
-/// Smallest-last greedy colouring of any graph, with at most degeneracy + 1 colours.
+/// Smallest-last greedy colouring of any graph, with at most degeneracy + 1 colours, or
+/// `error.TooManyColors` when that would take more than 255 (`uncolored` is not a colour).
 pub fn greedy(gpa: std.mem.Allocator, g: Graph) ![]u8 {
     const order = try smallestLast(gpa, g, null);
     defer order.deinit(gpa);
     const colors = try gpa.alloc(u8, g.n);
+    errdefer gpa.free(colors);
     @memset(colors, uncolored);
+    const used = try gpa.alloc(bool, @min(order.degeneracy, uncolored - 1) + 1);
+    defer gpa.free(used);
+    @memset(used, false);
     var i = order.vertices.len;
     while (i > 0) {
         i -= 1;
         const v = order.vertices[i];
-        colors[v] = lowestFree(usedMask(g, colors, v), 32).?;
+        for (g.neighbors(v)) |u| if (colors[u] < used.len) {
+            used[colors[u]] = true;
+        };
+        const c = std.mem.indexOfScalar(bool, used, false) orelse return error.TooManyColors;
+        for (g.neighbors(v)) |u| if (colors[u] < used.len) {
+            used[colors[u]] = false;
+        };
+        colors[v] = @intCast(c);
     }
     return colors;
 }
@@ -459,4 +471,41 @@ test "non-planar input is refused" {
     defer g.deinit(gpa);
     try std.testing.expectError(error.NotPlanar, five(gpa, g));
     try std.testing.expectError(error.NotPlanar, four(gpa, g, .{}));
+}
+
+fn complete(gpa: std.mem.Allocator, n: u32) !Graph {
+    var edges: std.ArrayList(graph_mod.Edge) = .empty;
+    defer edges.deinit(gpa);
+    for (0..n) |i| for (i + 1..n) |j| try edges.append(gpa, .{ @intCast(i), @intCast(j) });
+    return Graph.init(gpa, n, edges.items);
+}
+
+test "greedy colours graphs of degeneracy 32 and more" {
+    const gpa = std.testing.allocator;
+    for ([_]u32{ 33, 40, 255 }) |n| {
+        const g = try complete(gpa, n);
+        defer g.deinit(gpa);
+        const colors = try greedy(gpa, g);
+        defer gpa.free(colors);
+        try std.testing.expectEqual(@as(u8, @intCast(n)), count(colors));
+        try std.testing.expect(isProper(g, colors, @intCast(n)));
+    }
+}
+
+test "greedy refuses to use more than 255 colours" {
+    const gpa = std.testing.allocator;
+    const g = try complete(gpa, 256);
+    defer g.deinit(gpa);
+    try std.testing.expectError(error.TooManyColors, greedy(gpa, g));
+}
+
+fn greedyAlloc(gpa: std.mem.Allocator) !void {
+    const g = try icosahedron(gpa);
+    defer g.deinit(gpa);
+    const colors = try greedy(gpa, g);
+    gpa.free(colors);
+}
+
+test "greedy frees everything on allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, greedyAlloc, .{});
 }

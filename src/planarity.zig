@@ -13,6 +13,7 @@ const Embedding = @import("embedding.zig").Embedding;
 
 /// A planar embedding of `g`, or null when `g` is not planar.
 pub fn embed(gpa: std.mem.Allocator, g: Graph) !?Embedding {
+    if (g.n > 2 and g.edgeCount() > 3 * @as(usize, g.n) - 6) return null;
     var s = try State.init(gpa, g);
     defer s.deinit();
     return s.run();
@@ -117,8 +118,6 @@ const State = struct {
 
     fn run(s: *State) !?Embedding {
         const g = s.g;
-        if (g.n > 2 and g.edgeCount() > 3 * @as(usize, g.n) - 6) return null;
-
         for (0..g.n) |v| {
             if (s.height[v] != none) continue;
             try s.roots.append(s.gpa, @intCast(v));
@@ -478,4 +477,18 @@ test "a long path does not exhaust the stack" {
     const e = (try embed(gpa, g)).?;
     defer e.deinit(gpa);
     try std.testing.expectEqual(0, try e.genus(gpa));
+}
+
+test "too many edges are rejected before any allocation" {
+    const gpa = std.testing.allocator;
+    var edges: [10]graph_mod.Edge = undefined;
+    var k: usize = 0;
+    for (0..5) |i| for (i + 1..5) |j| {
+        edges[k] = .{ @intCast(i), @intCast(j) };
+        k += 1;
+    };
+    const g = try Graph.init(gpa, 5, &edges);
+    defer g.deinit(gpa);
+    var failing: std.testing.FailingAllocator = .init(gpa, .{ .fail_index = 0 });
+    try std.testing.expectEqual(null, try embed(failing.allocator(), g));
 }

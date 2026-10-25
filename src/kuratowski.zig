@@ -26,7 +26,8 @@ pub const Kind = enum {
     }
 };
 
-/// The edges of a Kuratowski subgraph of `g`, sorted, or null when `g` is planar.
+/// The edges of a Kuratowski subgraph of `g`, sorted, or null when `g` is planar. Memory stays
+/// O(n + m) whatever `gpa` is: each trial graph lives in an arena that is reset between trials.
 pub fn find(gpa: std.mem.Allocator, g: Graph) !?[]Edge {
     if (try planarity.isPlanar(gpa, g)) return null;
     const all = try g.edgeList(gpa);
@@ -34,12 +35,16 @@ pub fn find(gpa: std.mem.Allocator, g: Graph) !?[]Edge {
     var keep: std.ArrayList(Edge) = .empty;
     errdefer keep.deinit(gpa);
     try keep.appendSlice(gpa, all);
+    var trial: std.heap.ArenaAllocator = .init(gpa);
+    defer trial.deinit();
+    const planar_max = 3 * @as(usize, g.n) -| 6;
     var i: usize = 0;
     while (i < keep.items.len) {
         const removed = keep.orderedRemove(i);
-        const rest = try Graph.init(gpa, g.n, keep.items);
-        defer rest.deinit(gpa);
-        if (try planarity.isPlanar(gpa, rest)) {
+        if (keep.items.len > planar_max) continue;
+        _ = trial.reset(.retain_capacity);
+        const rest = try Graph.init(trial.allocator(), g.n, keep.items);
+        if (try planarity.isPlanar(trial.allocator(), rest)) {
             try keep.insert(gpa, i, removed);
             i += 1;
         }
@@ -153,4 +158,56 @@ test "a subdivided K5 is recognised; a cycle is not a certificate" {
     };
     try std.testing.expectEqual(.k5, (try classify(gpa, next, edges.items)).?);
     try std.testing.expectEqual(null, try classify(gpa, 3, &.{ .{ 0, 1 }, .{ 1, 2 }, .{ 2, 0 } }));
+}
+
+/// A `side` by `side` grid with one diagonal per square, which is planar with 3n - 6 - O(side)
+/// edges, plus a disjoint K3,3.
+fn gridWithK33(gpa: std.mem.Allocator, side: u32) !Graph {
+    var edges: std.ArrayList(Edge) = .empty;
+    defer edges.deinit(gpa);
+    for (0..side) |r| for (0..side) |c| {
+        const v: u32 = @intCast(r * side + c);
+        if (c + 1 < side) try edges.append(gpa, .{ v, v + 1 });
+        if (r + 1 < side) try edges.append(gpa, .{ v, v + side });
+        if (c + 1 < side and r + 1 < side) try edges.append(gpa, .{ v, v + side + 1 });
+    };
+    const b = side * side;
+    for (0..3) |x| for (3..6) |y| try edges.append(gpa, .{ b + @as(u32, @intCast(x)), b + @as(u32, @intCast(y)) });
+    return Graph.init(gpa, b + 6, edges.items);
+}
+
+test "find keeps memory linear when given an arena" {
+    const gpa = std.testing.allocator;
+    const g = try gridWithK33(gpa, 12);
+    defer g.deinit(gpa);
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const cert = (try find(arena.allocator(), g)).?;
+    try std.testing.expectEqual(Kind.k33, (try classify(gpa, g.n, cert)).?);
+    try std.testing.expect(arena.queryCapacity() < 512 * 1024);
+}
+
+fn findAlloc(gpa: std.mem.Allocator) !void {
+    const g = try gridWithK33(gpa, 3);
+    defer g.deinit(gpa);
+    const cert = (try find(gpa, g)).?;
+    gpa.free(cert);
+}
+
+test "find frees everything on allocation failure" {
+    // Whether the trial arena grows in place depends on the backing allocator's state, so the
+    // number of allocations varies between runs and `checkAllAllocationFailures` cannot be used.
+    var i: usize = 0;
+    while (true) : (i += 1) {
+        var failing: std.testing.FailingAllocator = .init(std.testing.allocator, .{ .fail_index = i });
+        findAlloc(failing.allocator()) catch |e| switch (e) {
+            error.OutOfMemory => {
+                try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+                continue;
+            },
+            else => return e,
+        };
+        if (!failing.has_induced_failure) break;
+    }
+    try std.testing.expect(i > 0);
 }

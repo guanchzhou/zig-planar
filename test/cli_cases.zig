@@ -1,6 +1,8 @@
 //! Command-line cases run by `zig build test-cli`. `stdout` is compared
 //! exactly, `stderr` as a substring.
 
+const std = @import("std");
+
 pub const Case = struct {
     name: []const u8,
     args: []const []const u8,
@@ -10,7 +12,45 @@ pub const Case = struct {
     exit: u8 = 0,
 };
 
+/// The complete graph on `n` nodes as `{"n":N,"edges":[..]` without the closing brace.
+fn complete(comptime n: u32) []const u8 {
+    @setEvalBranchQuota(10_000_000);
+    comptime var s: []const u8 = std.fmt.comptimePrint("{{\"n\":{d},\"edges\":[", .{n});
+    comptime var first = true;
+    inline for (0..n) |i| inline for (i + 1..n) |j| {
+        s = s ++ (if (first) "" else ",") ++ std.fmt.comptimePrint("[{d},{d}]", .{ i, j });
+        first = false;
+    };
+    return s ++ "]";
+}
+
 pub const cases = [_]Case{
+    .{
+        .name = "color: greedy on K33 (degeneracy 32)",
+        .args = &.{"color"},
+        .stdin = complete(33) ++ ",\"method\":\"greedy\"}",
+        .stdout = "{\"colors\":[32,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31],\"used\":33}\n",
+    },
+    .{
+        .name = "planar: certificate for K3,3 among isolated nodes",
+        .args = &.{"planar"},
+        .stdin = "{\"n\":20,\"edges\":[[0,3],[0,4],[0,5],[1,3],[1,4],[1,5],[2,3],[2,4],[2,5],[6,7],[7,8],[8,6]],\"certificate\":true}",
+        .stdout = "{\"planar\":false,\"kuratowski\":{\"kind\":\"K3,3\",\"edges\":[[0,3],[0,4],[0,5],[1,3],[1,4],[1,5],[2,3],[2,4],[2,5]]}}\n",
+    },
+    .{
+        .name = "error: too many nodes",
+        .args = &.{"planar"},
+        .stdin = "{\"n\":16777217,\"edges\":[]}",
+        .stderr = "n must be at most 16777216",
+        .exit = 1,
+    },
+    .{
+        .name = "error: too many nodes for paths",
+        .args = &.{"paths"},
+        .stdin = "{\"n\":4000000000,\"edges\":[],\"boundary\":[0,1]}",
+        .stderr = "n must be at most 16777216",
+        .exit = 1,
+    },
     .{
         .name = "planar: K4 with its faces",
         .args = &.{"planar"},

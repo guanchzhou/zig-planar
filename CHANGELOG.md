@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.2 - 2026-10-25
+
+- Fix a panic in `color.greedy` on graphs of degeneracy 32 or more, such as
+  K33: the used-colour set is now a scratch array sized to the degeneracy, and
+  `error.TooManyColors` is returned when more than 255 colours would be needed.
+- `kuratowski.find` keeps memory O(n + m) even when given an arena: each trial
+  graph lives in an internal arena reset between trials, and trials whose edge
+  count exceeds 3n - 6 are skipped as certainly non-planar.
+- `planarity.embed` rejects graphs with more than 3n - 6 edges before
+  allocating.
+- `Graph.init` returns `error.TooManyEdges` above `maxInt(u32) / 2` edges, since
+  half-edges are numbered in `u32`.
+- The command line rejects `n` above 2^24 (16,777,216) instead of attempting
+  allocations of many gigabytes.
+
 ## 0.1.1 - 2026-10-20
 
 - `mssp`: Klein's multiple-source shortest paths. `trees` returns a

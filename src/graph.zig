@@ -18,7 +18,9 @@ pub const Graph = struct {
     from: []u32,
     twin: []u32,
 
+    /// `error.TooManyEdges` when `edges.len > maxInt(u32) / 2`, as half-edges are numbered in `u32`.
     pub fn init(gpa: std.mem.Allocator, n: u32, edges: []const Edge) !Graph {
+        if (edges.len > std.math.maxInt(u32) / 2) return error.TooManyEdges;
         var keys: std.ArrayList(u64) = .empty;
         defer keys.deinit(gpa);
         try keys.ensureTotalCapacity(gpa, 2 * edges.len);
@@ -117,4 +119,9 @@ test "self loops and repeated edges are dropped" {
 
 test "an edge outside the graph is rejected" {
     try std.testing.expectError(error.NodeOutOfRange, Graph.init(std.testing.allocator, 2, &.{.{ 0, 2 }}));
+}
+
+test "more edges than u32 half-edge numbers can hold are rejected" {
+    const fake: [*]const Edge = @ptrFromInt(@alignOf(Edge));
+    try std.testing.expectError(error.TooManyEdges, Graph.init(std.testing.allocator, 2, fake[0 .. std.math.maxInt(u32) / 2 + 1]));
 }

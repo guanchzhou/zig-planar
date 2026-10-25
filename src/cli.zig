@@ -8,7 +8,8 @@ const build_options = @import("build_options");
 const usage =
     \\usage: zig-planar COMMAND < input.json
     \\
-    \\Edges are [u, v] pairs of node indices below n. Self loops and repeated edges are ignored.
+    \\Edges are [u, v] pairs of node indices below n, and n is at most 16777216 (2^24). Self loops
+    \\and repeated edges are ignored.
     \\
     \\  planar  {"n":N,"edges":[..],"certificate":bool?}
     \\          -> {"planar":true,"rotation":[[..]..],"faces":[[..]..]}
@@ -50,9 +51,17 @@ fn index(x: f64, n: u32, i: usize) u32 {
     return @intFromFloat(x);
 }
 
-fn graphOf(arena: std.mem.Allocator, n: f64, rows: []const []const f64) !planar.Graph {
+/// Every command allocates O(n) up front, so n is capped well below `maxInt(u32)`.
+const max_nodes = 1 << 24;
+
+fn nodeCount(n: f64) u32 {
     if (!(n >= 0 and n < std.math.maxInt(u32) and @floor(n) == n)) fail("n must be a whole number of nodes", .{});
-    const count: u32 = @intFromFloat(n);
+    if (n > max_nodes) fail("n must be at most {d}", .{max_nodes});
+    return @intFromFloat(n);
+}
+
+fn graphOf(arena: std.mem.Allocator, n: f64, rows: []const []const f64) !planar.Graph {
+    const count = nodeCount(n);
     const edges = try arena.alloc(planar.Edge, rows.len);
     for (rows, edges, 0..) |r, *e, i| {
         if (r.len != 2) fail("edge {d} has {d} values, expected 2", .{ i, r.len });
@@ -64,8 +73,7 @@ fn graphOf(arena: std.mem.Allocator, n: f64, rows: []const []const f64) !planar.
 const Weighted = struct { g: planar.Graph, lengths: []u32 };
 
 fn weightedOf(arena: std.mem.Allocator, n: f64, rows: []const []const f64) !Weighted {
-    if (!(n >= 0 and n < std.math.maxInt(u32) and @floor(n) == n)) fail("n must be a whole number of nodes", .{});
-    const count: u32 = @intFromFloat(n);
+    const count = nodeCount(n);
     const edges = try arena.alloc(planar.Edge, rows.len);
     for (rows, edges, 0..) |r, *e, i| {
         if (r.len != 2 and r.len != 3) fail("edge {d} has {d} values, expected 2 or 3", .{ i, r.len });
@@ -190,7 +198,10 @@ pub fn main(init: std.process.Init) !void {
         const in = parse(struct { n: f64, edges: []const []const f64, method: []const u8 = "four" }, arena, text);
         const g = try graphOf(arena, in.n, in.edges);
         if (std.mem.eql(u8, in.method, "greedy")) {
-            const colors = try planar.color.greedy(arena, g);
+            const colors = planar.color.greedy(arena, g) catch |e| switch (e) {
+                error.TooManyColors => fail("greedy needs more than 255 colours for this graph", .{}),
+                else => |x| return x,
+            };
             try emit(out, .{ .colors = try numbers(arena, colors), .used = planar.color.count(colors) });
         } else if (std.mem.eql(u8, in.method, "five")) {
             const colors = planar.color.five(arena, g) catch |e| switch (e) {
